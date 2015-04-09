@@ -2,7 +2,7 @@ What?
 -----
 Take 1 TCP listen socket and duplicate it across N threads so you get some sweet multi-thread action happening.
 
-.. figure:: doc/multiplex.svg
+.. figure:: doc/multiplex.png
 
 Example usage
 -------------
