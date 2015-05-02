@@ -126,10 +126,6 @@ int uv_multiplex_init(uv_multiplex_t * m,
                       void (*worker_start)(
                           void* uv_tcp))
 {
-    int i;
-
-    // TODO make sure pipe is not inuse
-
     m->listener = listener;
     m->pipe_name = pipe_name;
     m->nworkers = nworkers;
@@ -139,6 +135,9 @@ int uv_multiplex_init(uv_multiplex_t * m,
     /* remove named pipe */
     unlink(pipe_name);
 
+    int i;
+
+    /* make workers wait for dispatcher */
     for (i = 0; i < nworkers; i++)
     {
         uv_multiplex_worker_t* worker = &m->workers[i];

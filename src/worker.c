@@ -13,17 +13,10 @@
 #include "container_of.h"
 #include "uv_multiplex.h"
 
-static void __on_ipc_close(uv_handle_t* handle)
-{
-    //uv_multiplex_worker_t* worker = container_of(handle, uv_multiplex_worker_t, pipe);
-    //free(ctx);
-}
-
 static void __on_ipc_alloc(uv_handle_t* handle,
                            size_t suggested_size,
                            uv_buf_t* buf)
 {
-//    uv_multiplex_worker_t* worker = container_of(handle, uv_multiplex_worker_t, pipe);
     buf->base = calloc(1, suggested_size);
     buf->len = suggested_size;
 }
@@ -60,6 +53,7 @@ static void __on_ipc_read(uv_stream_t* handle,
         abort();
     }
 
+    /* closing the pipe will allow us to exit our loop */
     uv_close((uv_handle_t*)handle, NULL);
 }
 
