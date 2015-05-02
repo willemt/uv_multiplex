@@ -53,9 +53,17 @@ static void __on_pipe_connection(uv_stream_t* pipe, int status)
     if (e != 0)
         fatal(e);
 
-    e = uv_accept(pipe, (uv_stream_t*)&pc->peer_handle);
-    if (e != 0)
-        fatal(e);
+    do
+    {
+        e = uv_accept(pipe, (uv_stream_t*)&pc->peer_handle);
+        if (0 == e)
+            break;
+        else if (-e == EAGAIN)
+            return;
+        else
+            fatal(e);
+    }
+    while (1);
 
     /* send the listen socket */
     e = uv_write2(&pc->write_req,
@@ -70,12 +78,11 @@ static void __on_pipe_connection(uv_stream_t* pipe, int status)
 int uv_multiplex_dispatch(uv_multiplex_t* m)
 {
     int e;
-    uv_loop_t* loop = m->listener->loop;
 
-    assert(loop);
+    assert(m->listener->loop);
 
     /* create pipe for handing off listen socket */
-    e = uv_pipe_init(loop, &m->pipe, 1);
+    e = uv_pipe_init(m->listener->loop, &m->pipe, 1);
     if (0 != e)
         fatal(e);
 
@@ -92,9 +99,18 @@ int uv_multiplex_dispatch(uv_multiplex_t* m)
     for (i = 0; i < m->nworkers; i++)
         uv_sem_post(&m->workers[i].sem);
 
-    assert(0 == uv_run(loop, UV_RUN_DEFAULT));
-    uv_close((uv_handle_t*)&m->listener, NULL);
-    assert(0 == uv_run(loop, UV_RUN_DEFAULT));
+    /* This loop will finish once all workers have connected
+     * The listen pipe is closed by the last worker */
+    while (1)
+    {
+        uv_mutex_lock(&m->lock);
+        int e = uv_run(m->listener->loop, UV_RUN_NOWAIT);
+        if (0 == e)
+            break;
+        uv_mutex_unlock(&m->lock);
+    }
+
+    unlink(m->pipe_name);
 
     return 0;
 }
@@ -109,8 +125,10 @@ int uv_multiplex_init(uv_multiplex_t * m,
     m->listener = listener;
     m->pipe_name = pipe_name;
     m->nworkers = nworkers;
+    m->nconnected = 0;
     m->workers = calloc(m->nworkers, sizeof(uv_multiplex_worker_t));
     m->worker_start = worker_start;
+    uv_mutex_init(&m->lock);
 
     /* remove named pipe */
     unlink(pipe_name);

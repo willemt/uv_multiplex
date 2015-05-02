@@ -22,7 +22,7 @@ static void __on_ipc_alloc(uv_handle_t* handle,
 }
 
 /**
- * worker has received the listening socket
+ * Worker has received the listening socket
  */
 static void __on_ipc_read(uv_stream_t* handle,
                           ssize_t nread,
@@ -79,21 +79,45 @@ static void __on_ipc_connect(uv_connect_t* req, int status)
 }
 
 /**
+ * Once all workers have connected, dispatcher can exit its loop
+ */
+static void __last_worker_cleanup(uv_multiplex_worker_t* worker)
+{
+    uv_mutex_lock(&worker->m->lock);
+    worker->m->nconnected += 1;
+
+    /* We're the last one out, so turn off the lights */
+    if (worker->m->nconnected == worker->m->nworkers)
+    {
+        uv_close((uv_handle_t*)&worker->m->pipe, NULL);
+        uv_close((uv_handle_t*)worker->m->listener, NULL);
+    }
+    uv_mutex_unlock(&worker->m->lock);
+}
+
+/**
  * Worker will get listen handle from dispatcher
  */
 static void __get_listen_handle(uv_loop_t* loop,
                                 uv_multiplex_worker_t* worker)
 {
-    int e;
+    do
+    {
+        int e = uv_pipe_init(loop, &worker->pipe, 1);
+        if (0 != e)
+            fatal(e);
 
-    e = uv_pipe_init(loop, &worker->pipe, 1);
-    if (0 != e)
-        fatal(e);
+        uv_pipe_connect(&worker->connect_req,
+                        &worker->pipe,
+                        worker->m->pipe_name,
+                        __on_ipc_connect);
 
-    uv_pipe_connect(&worker->connect_req, &worker->pipe, worker->m->pipe_name,
-                    __on_ipc_connect);
+        uv_run(loop, UV_RUN_DEFAULT);
+    }
+    /* Try again - it might be that the dispatcher wasn't ready */
+    while (!worker->listener.loop);
 
-    uv_run(loop, UV_RUN_DEFAULT);
+    __last_worker_cleanup(worker);
 }
 
 static void __worker(void* _worker)
@@ -115,10 +139,18 @@ int uv_multiplex_worker_create(uv_multiplex_t* m,
                                unsigned int worker_id,
                                void* udata)
 {
+    int e;
     uv_multiplex_worker_t* worker = &m->workers[worker_id];
 
-    uv_loop_init(&worker->loop);
     worker->listener.data = udata;
-    uv_thread_create(&worker->thread, __worker, (void*)worker);
+
+    e = uv_loop_init(&worker->loop);
+    if (0 != e)
+        fatal(e);
+
+    e = uv_thread_create(&worker->thread, __worker, (void*)worker);
+    if (0 != e)
+        fatal(e);
+
     return 0;
 }
