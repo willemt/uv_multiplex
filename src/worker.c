@@ -36,8 +36,6 @@ static void __on_ipc_read(uv_stream_t* handle,
     uv_handle_type type = uv_pipe_pending_type((uv_pipe_t*)handle);
     int pending_count = uv_pipe_pending_count((uv_pipe_t*)handle);
 
-    uv_handle_type type = uv_pipe_pending_type((uv_pipe_t*)handle);
-
     if (0 == pending_count)
     {
         uv_close((uv_handle_t*)handle, NULL);
