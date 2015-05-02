@@ -33,25 +33,27 @@ static void __on_ipc_read(uv_stream_t* handle,
 
     worker = container_of(handle, uv_multiplex_worker_t, pipe);
 
-    assert(1 == uv_pipe_pending_count((uv_pipe_t*)handle));
+    uv_handle_type type = uv_pipe_pending_type((uv_pipe_t*)handle);
+    int pending_count = uv_pipe_pending_count((uv_pipe_t*)handle);
 
     uv_handle_type type = uv_pipe_pending_type((uv_pipe_t*)handle);
 
+    if (0 == pending_count)
+    {
+        uv_close((uv_handle_t*)handle, NULL);
+        return;
+    }
+
+    assert(1 == uv_pipe_pending_count((uv_pipe_t*)handle));
     assert(type == UV_TCP);
 
-    e = uv_tcp_init(worker->pipe.loop, &worker->listener);
+    e = uv_tcp_init(handle->loop, &worker->listener);
     if (0 != e)
-    {
-        fprintf(stderr, "%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 
     e = uv_accept(handle, (uv_stream_t*)&worker->listener);
     if (0 != e)
-    {
-        fprintf(stderr, "%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 
     /* closing the pipe will allow us to exit our loop */
     uv_close((uv_handle_t*)handle, NULL);
@@ -68,18 +70,12 @@ static void __on_ipc_connect(uv_connect_t* req, int status)
     worker = container_of(req, uv_multiplex_worker_t, connect_req);
 
     if (0 != status)
-    {
-        fprintf(stderr, "%s\n", uv_strerror(status));
-        abort();
-    }
+        fatal(status);
 
     e = uv_read_start((uv_stream_t*)&worker->pipe, __on_ipc_alloc,
                       __on_ipc_read);
     if (0 != e)
-    {
-        fprintf(stderr, "%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 }
 
 /**
@@ -92,10 +88,7 @@ static void __get_listen_handle(uv_loop_t* loop,
 
     e = uv_pipe_init(loop, &worker->pipe, 1);
     if (0 != e)
-    {
-        fprintf(stderr, "%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 
     uv_pipe_connect(&worker->connect_req, &worker->pipe, worker->m->pipe_name,
                     __on_ipc_connect);
@@ -107,10 +100,14 @@ static void __worker(void* _worker)
 {
     uv_multiplex_worker_t* worker = _worker;
 
+    assert(worker);
+    assert(!worker->listener.loop);
+
     /* Wait until the main thread is ready. */
     uv_sem_wait(&worker->sem);
+    uv_sem_destroy(&worker->sem);
     __get_listen_handle(&worker->loop, worker);
-    uv_sem_post(&worker->sem);
+
     worker->m->worker_start(&worker->listener);
 }
 

@@ -30,6 +30,7 @@ static void __ipc_close_cb(uv_handle_t* handle)
  */
 static void __on_ipc_write(uv_write_t* req, int status)
 {
+    assert(0 == status);
     ipc_peer_t* ctx = container_of(req, ipc_peer_t, write_req);
     uv_close((uv_handle_t*)&ctx->peer_handle, __ipc_close_cb);
 }
@@ -46,22 +47,15 @@ static void __on_pipe_connection(uv_stream_t* pipe, int status)
 
     ipc_peer_t* pc = calloc(1, sizeof(*pc));
 
-    if (pipe->type == UV_TCP)
-        e = uv_tcp_init(pipe->loop, (uv_tcp_t*)&pc->peer_handle);
-    else if (pipe->type == UV_NAMED_PIPE)
-        e = uv_pipe_init(pipe->loop, (uv_pipe_t*)&pc->peer_handle, 1);
+    assert(pipe->type == UV_NAMED_PIPE);
+
+    e = uv_pipe_init(pipe->loop, (uv_pipe_t*)&pc->peer_handle, 1);
     if (e != 0)
-    {
-        fprintf(stderr, "uv_tcp_bind:%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 
     e = uv_accept(pipe, (uv_stream_t*)&pc->peer_handle);
     if (e != 0)
-    {
-        fprintf(stderr, "uv_tcp_bind:%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 
     /* send the listen socket */
     e = uv_write2(&pc->write_req,
@@ -70,12 +64,7 @@ static void __on_pipe_connection(uv_stream_t* pipe, int status)
                   (uv_stream_t*)m->listener,
                   __on_ipc_write);
     if (e != 0)
-    {
-        fprintf(stderr, "uv_tcp_bind:%s\n", uv_strerror(e));
-        abort();
-    }
-
-    //uv_close((uv_handle_t*) pipe, NULL);
+        fatal(e);
 }
 
 int uv_multiplex_dispatch(uv_multiplex_t* m)
@@ -88,24 +77,15 @@ int uv_multiplex_dispatch(uv_multiplex_t* m)
     /* create pipe for handing off listen socket */
     e = uv_pipe_init(loop, &m->pipe, 1);
     if (0 != e)
-    {
-        fprintf(stderr, "%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 
     e = uv_pipe_bind(&m->pipe, m->pipe_name);
     if (0 != e)
-    {
-        fprintf(stderr, "%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 
     e = uv_listen((uv_stream_t*)&m->pipe, 128, __on_pipe_connection);
     if (0 != e)
-    {
-        fprintf(stderr, "%s\n", uv_strerror(e));
-        abort();
-    }
+        fatal(e);
 
     int i;
 
