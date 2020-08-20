@@ -82,7 +82,7 @@ int uv_multiplex_dispatch(uv_multiplex_t* m)
     assert(m->listener->loop);
 
     /* create pipe for handing off listen socket */
-    e = uv_pipe_init(m->listener->loop, &m->pipe, 1);
+    e = uv_pipe_init(m->listener->loop, &m->pipe, 0);
     if (0 != e)
         fatal(e);
 
